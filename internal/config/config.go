@@ -70,7 +70,7 @@ func (f *File) ActivePortKeys() []ports.PortKey {
 }
 
 func (f *File) Patch(targetPorts ports.PortMap) (bool, error) {
-	updated, changed := patchRaw(f.raw, targetPorts)
+	updated, changed := f.PatchedBytes(targetPorts)
 	if !changed {
 		return false, nil
 	}
@@ -86,6 +86,10 @@ func (f *File) Patch(targetPorts ports.PortMap) (bool, error) {
 	f.raw = updated
 	f.activeKeys = findActiveKeys(updated)
 	return true, nil
+}
+
+func (f *File) PatchedBytes(targetPorts ports.PortMap) ([]byte, bool) {
+	return patchRaw(bytes.Clone(f.raw), targetPorts)
 }
 
 func patchRaw(raw []byte, targetPorts ports.PortMap) ([]byte, bool) {

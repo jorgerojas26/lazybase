@@ -117,6 +117,43 @@ func TestPatchCreatesBackupOnlyOnFirstWrite(t *testing.T) {
 	}
 }
 
+func TestPatchedBytesDoesNotMutateSourceFile(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	raw := []byte("[api]\nport = 54321\n[studio]\nport = 54323\n")
+	if err := os.WriteFile(path, raw, 0o644); err != nil {
+		t.Fatalf("write config: %v", err)
+	}
+
+	file, err := ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+
+	patched, changed := file.PatchedBytes(ports.PortMap{ports.KeyAPIPort: 54421, ports.KeyStudioPort: 54423})
+	if !changed {
+		t.Fatal("expected PatchedBytes to report change")
+	}
+	if string(patched) == string(raw) {
+		t.Fatal("expected patched bytes to differ from source")
+	}
+	if got := string(mustReadFile(t, path)); got != string(raw) {
+		t.Fatalf("expected source file to remain unchanged, got %q", got)
+	}
+	if got := string(file.raw); got != string(raw) {
+		t.Fatalf("expected in-memory source bytes unchanged, got %q", got)
+	}
+}
+
+func mustReadFile(t *testing.T, path string) []byte {
+	t.Helper()
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read file: %v", err)
+	}
+	return raw
+}
+
 func assertContains(t *testing.T, text, fragment string) {
 	t.Helper()
 	if !strings.Contains(text, fragment) {

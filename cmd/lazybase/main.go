@@ -8,7 +8,9 @@ import (
 
 	configpkg "lazybase/internal/config"
 	"lazybase/internal/ports"
+	"lazybase/internal/project"
 	"lazybase/internal/registry"
+	"lazybase/internal/runtime"
 	"lazybase/internal/supabase"
 	"lazybase/internal/tui"
 )
@@ -74,12 +76,12 @@ func runStart(extraArgs []string) error {
 		return err
 	}
 
-	projectPath, configPath, err := resolveProjectRoot(cwd)
+	projectInfo, err := resolveProjectRoot(cwd)
 	if err != nil {
 		return err
 	}
 
-	projectConfig, err := configpkg.ReadFile(configPath)
+	projectConfig, err := configpkg.ReadFile(projectInfo.SourceConfigPath)
 	if err != nil {
 		return err
 	}
@@ -105,14 +107,13 @@ func runStart(extraArgs []string) error {
 		return err
 	}
 
-	slot, reused, err := store.GetOrAllocate(reg, projectPath, settings)
+	slot, reused, err := store.GetOrAllocate(reg, projectInfo, settings)
 	if err != nil {
 		return err
 	}
 
 	targetPorts := ports.Compute(settings, slot, activeKeys)
-	changed, err := projectConfig.Patch(targetPorts)
-	if err != nil {
+	if err := runtime.Prepare(projectInfo, projectConfig, targetPorts); err != nil {
 		return err
 	}
 
@@ -126,39 +127,14 @@ func runStart(extraArgs []string) error {
 	if reused {
 		verb = "reused"
 	}
-	status := "unchanged"
-	if changed {
-		status = "patched"
-	}
 
-	fmt.Fprintf(os.Stderr, "Lazybase: %s slot %d (%s) studio=http://127.0.0.1:%d api=http://127.0.0.1:%d\n", verb, slot, status, studioPort, apiPort)
+	fmt.Fprintf(os.Stderr, "Lazybase: %s slot %d (runtime) studio=http://127.0.0.1:%d api=http://127.0.0.1:%d\n", verb, slot, studioPort, apiPort)
 
-	return runStartSupabase(projectPath, extraArgs)
+	return runStartSupabase(projectInfo.RuntimeRoot, extraArgs)
 }
 
-func resolveProjectRoot(cwd string) (string, string, error) {
-	projectPath, err := filepath.Abs(cwd)
-	if err != nil {
-		return "", "", err
-	}
-
-	configPath := filepath.Join(projectPath, "supabase", "config.toml")
-	if _, err := os.Stat(configPath); err == nil {
-		return projectPath, configPath, nil
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", "", err
-	}
-
-	if filepath.Base(projectPath) == "supabase" {
-		configPath = filepath.Join(projectPath, "config.toml")
-		if _, err := os.Stat(configPath); err == nil {
-			return filepath.Dir(projectPath), configPath, nil
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return "", "", err
-		}
-	}
-
-	return "", "", fmt.Errorf("missing supabase/config.toml in %s", projectPath)
+func resolveProjectRoot(cwd string) (project.Info, error) {
+	return project.ResolveFromWorkingDir(cwd)
 }
 
 func lazybaseConfigDir() (string, error) {

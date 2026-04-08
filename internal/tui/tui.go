@@ -55,9 +55,9 @@ func (m model) Init() tea.Cmd {
 	cmds := make([]tea.Cmd, 0, len(m.projects))
 	for i, project := range m.projects {
 		index := i
-		path := project.Path
+		workdir := project.RuntimePath
 		cmds = append(cmds, func() tea.Msg {
-			status, err := supabase.StatusForProject(path)
+			status, err := supabase.StatusForProject(workdir)
 			return statusMsg{index: index, status: status, err: err}
 		})
 	}
@@ -97,8 +97,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if len(m.projects) == 0 {
 				break
 			}
-			path := m.projects[m.cursor].Path
-			if !m.store.Prune(m.reg, path) {
+			projectID := m.projects[m.cursor].ID
+			if !m.store.Prune(m.reg, projectID) {
 				break
 			}
 			if err := m.store.Save(m.reg); err != nil {

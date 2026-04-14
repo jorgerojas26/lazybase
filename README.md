@@ -105,7 +105,28 @@ Flow:
 
 ### Pass-through commands
 
-Everything except `start` is passed through unchanged, including the Supabase CLI exit code:
+Everything except `start` is passed through, and when Lazybase can resolve the current project it injects `--workdir <runtime>` automatically (unless you already provided `--workdir`). Supabase CLI exit codes are preserved.
+
+For safety, Lazybase skips runtime workdir injection for global/account-oriented commands (for example `projects`, `login`, `link`) and file-creation flows that should stay in your source tree (for example `migration new`, `db pull`).
+
+When runtime workdir injection is active, Lazybase also links seed paths declared in `[db.seed].sql_paths` into runtime so `db reset` can resolve custom locations such as `./seeds/*.sql` and brace patterns like `./seeds/{core,dev}/*.sql`.
+
+Valid seed path examples (relative to `supabase/`):
+
+- `./seeds/*.sql`
+- `./seeds/{core,dev}/*.sql`
+- `./seed.sql`
+
+Ignored seed path examples (with warning):
+
+- `/tmp/seeds/*.sql` (absolute path)
+- `../seeds/*.sql` (path traversal outside `supabase/`)
+
+Example warning:
+
+```text
+Lazybase: warning: ignored db.seed.sql_paths entry "../seeds/*.sql": path traversal outside supabase dir is not allowed
+```
 
 ```bash
 lazybase stop

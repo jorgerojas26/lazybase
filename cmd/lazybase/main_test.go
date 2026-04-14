@@ -120,6 +120,152 @@ func TestRunStartFromSupabaseDirCanonicalizesProjectRoot(t *testing.T) {
 	}
 }
 
+func TestRunPassThroughUsesRuntimeWorkdir(t *testing.T) {
+	projectRoot := t.TempDir()
+	canonicalRoot := mustCanonicalPath(t, projectRoot)
+	writeProjectConfig(t, projectRoot)
+
+	var gotWorkdir string
+	var gotArgs []string
+
+	prevGetwd := runStartGetwd
+	prevRunSupabase := runSupabase
+	runStartGetwd = func() (string, error) { return projectRoot, nil }
+	runSupabase = func(workdir string, args []string) error {
+		gotWorkdir = workdir
+		gotArgs = append([]string(nil), args...)
+		return nil
+	}
+	t.Cleanup(func() {
+		runStartGetwd = prevGetwd
+		runSupabase = prevRunSupabase
+	})
+
+	if err := run([]string{"db", "reset"}); err != nil {
+		fatalf(t, "run: %v", err)
+	}
+
+	if gotWorkdir != project.RuntimeRoot(canonicalRoot) {
+		fatalf(t, "expected runtime workdir %q, got %q", project.RuntimeRoot(canonicalRoot), gotWorkdir)
+	}
+	if len(gotArgs) != 2 || gotArgs[0] != "db" || gotArgs[1] != "reset" {
+		fatalf(t, "unexpected passthrough args: %#v", gotArgs)
+	}
+}
+
+func TestRunPassThroughFallsBackWithoutProject(t *testing.T) {
+	cwd := t.TempDir()
+
+	var gotWorkdir string
+	var gotArgs []string
+
+	prevGetwd := runStartGetwd
+	prevRunSupabase := runSupabase
+	runStartGetwd = func() (string, error) { return cwd, nil }
+	runSupabase = func(workdir string, args []string) error {
+		gotWorkdir = workdir
+		gotArgs = append([]string(nil), args...)
+		return nil
+	}
+	t.Cleanup(func() {
+		runStartGetwd = prevGetwd
+		runSupabase = prevRunSupabase
+	})
+
+	if err := run([]string{"status"}); err != nil {
+		fatalf(t, "run: %v", err)
+	}
+
+	if gotWorkdir != "" {
+		fatalf(t, "expected empty workdir fallback, got %q", gotWorkdir)
+	}
+	if len(gotArgs) != 1 || gotArgs[0] != "status" {
+		fatalf(t, "unexpected passthrough args: %#v", gotArgs)
+	}
+}
+
+func TestRunPassThroughSkipsInjectionForMigrationNew(t *testing.T) {
+	projectRoot := t.TempDir()
+	writeProjectConfig(t, projectRoot)
+
+	var gotWorkdir string
+	var gotArgs []string
+
+	prevGetwd := runStartGetwd
+	prevRunSupabase := runSupabase
+	runStartGetwd = func() (string, error) { return projectRoot, nil }
+	runSupabase = func(workdir string, args []string) error {
+		gotWorkdir = workdir
+		gotArgs = append([]string(nil), args...)
+		return nil
+	}
+	t.Cleanup(func() {
+		runStartGetwd = prevGetwd
+		runSupabase = prevRunSupabase
+	})
+
+	if err := run([]string{"migration", "new", "add_users"}); err != nil {
+		fatalf(t, "run: %v", err)
+	}
+
+	if gotWorkdir != "" {
+		fatalf(t, "expected empty workdir for migration new, got %q", gotWorkdir)
+	}
+	if len(gotArgs) != 3 || gotArgs[0] != "migration" || gotArgs[1] != "new" || gotArgs[2] != "add_users" {
+		fatalf(t, "unexpected passthrough args: %#v", gotArgs)
+	}
+}
+
+func TestRunPassThroughSkipsInjectionForGlobalCommands(t *testing.T) {
+	projectRoot := t.TempDir()
+	writeProjectConfig(t, projectRoot)
+
+	var gotWorkdir string
+
+	prevGetwd := runStartGetwd
+	prevRunSupabase := runSupabase
+	runStartGetwd = func() (string, error) { return projectRoot, nil }
+	runSupabase = func(workdir string, args []string) error {
+		gotWorkdir = workdir
+		return nil
+	}
+	t.Cleanup(func() {
+		runStartGetwd = prevGetwd
+		runSupabase = prevRunSupabase
+	})
+
+	if err := run([]string{"projects", "list"}); err != nil {
+		fatalf(t, "run: %v", err)
+	}
+
+	if gotWorkdir != "" {
+		fatalf(t, "expected empty workdir for global command, got %q", gotWorkdir)
+	}
+}
+
+func TestShouldInjectRuntimeWorkdir(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "db reset", args: []string{"db", "reset"}, want: true},
+		{name: "flags before command", args: []string{"--debug", "db", "reset"}, want: true},
+		{name: "migration new", args: []string{"migration", "new", "x"}, want: false},
+		{name: "db pull", args: []string{"db", "pull", "foo"}, want: false},
+		{name: "projects list", args: []string{"projects", "list"}, want: false},
+		{name: "empty args", args: nil, want: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := shouldInjectRuntimeWorkdir(tc.args); got != tc.want {
+				fatalf(t, "shouldInjectRuntimeWorkdir(%#v) = %v, want %v", tc.args, got, tc.want)
+			}
+		})
+	}
+}
+
 func stubRunStartDeps(cwd string, start func(string, []string) error) func() {
 	prevGetwd := runStartGetwd
 	prevLookPath := runStartLookPath

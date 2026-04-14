@@ -49,12 +49,22 @@ func LookPath() (string, error) {
 }
 
 func Run(args []string) error {
+	return RunWithWorkdir("", args)
+}
+
+func RunWithWorkdir(workdir string, args []string) error {
 	_, err := LookPath()
 	if err != nil {
 		return err
 	}
 
-	cmd := exec.Command("supabase", args...)
+	finalArgs := make([]string, 0, len(args)+2)
+	if workdir != "" && !hasWorkdirFlag(args) {
+		finalArgs = append(finalArgs, "--workdir", workdir)
+	}
+	finalArgs = append(finalArgs, args...)
+
+	cmd := exec.Command("supabase", finalArgs...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
@@ -64,9 +74,18 @@ func Run(args []string) error {
 		if errors.As(err, &exitErr) {
 			return ExitError{code: exitErr.ExitCode(), err: exitErr}
 		}
-		return fmt.Errorf("run supabase %s: %w", strings.Join(args, " "), err)
+		return fmt.Errorf("run supabase %s: %w", strings.Join(finalArgs, " "), err)
 	}
 	return nil
+}
+
+func hasWorkdirFlag(args []string) bool {
+	for _, arg := range args {
+		if arg == "--workdir" || strings.HasPrefix(arg, "--workdir=") {
+			return true
+		}
+	}
+	return false
 }
 
 func Start(extraArgs []string) error {
@@ -75,11 +94,8 @@ func Start(extraArgs []string) error {
 
 func StartWithWorkdir(workdir string, extraArgs []string) error {
 	args := []string{"start"}
-	if workdir != "" {
-		args = append(args, "--workdir", workdir)
-	}
 	args = append(args, extraArgs...)
-	return Run(args)
+	return RunWithWorkdir(workdir, args)
 }
 
 func StatusForProject(workdir string) (Status, error) {

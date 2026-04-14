@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	configpkg "lazybase/internal/config"
 	"lazybase/internal/ports"
@@ -20,6 +21,7 @@ var (
 	runStartGetwd    = os.Getwd
 	runStartLookPath = supabase.LookPath
 	runStartSupabase = supabase.StartWithWorkdir
+	runSupabase      = supabase.RunWithWorkdir
 )
 
 func main() {
@@ -48,7 +50,54 @@ func run(args []string) error {
 		return runStart(args[1:])
 	}
 
-	return supabase.Run(args)
+	if !shouldInjectRuntimeWorkdir(args) {
+		return runSupabase("", args)
+	}
+
+	cwd, err := runStartGetwd()
+	if err != nil {
+		return err
+	}
+
+	projectInfo, err := resolveProjectRoot(cwd)
+	if err != nil {
+		return runSupabase("", args)
+	}
+
+	return runSupabase(projectInfo.RuntimeRoot, args)
+}
+
+func shouldInjectRuntimeWorkdir(args []string) bool {
+	tokens := commandTokens(args)
+	if len(tokens) == 0 {
+		return false
+	}
+
+	switch tokens[0] {
+	case "login", "logout", "link", "unlink", "projects", "orgs", "snippets", "init", "help", "completion":
+		return false
+	case "migration":
+		if len(tokens) > 1 && tokens[1] == "new" {
+			return false
+		}
+	case "db":
+		if len(tokens) > 1 && tokens[1] == "pull" {
+			return false
+		}
+	}
+
+	return true
+}
+
+func commandTokens(args []string) []string {
+	tokens := make([]string, 0, len(args))
+	for _, arg := range args {
+		if strings.HasPrefix(arg, "-") {
+			continue
+		}
+		tokens = append(tokens, arg)
+	}
+	return tokens
 }
 
 func runTUI() error {

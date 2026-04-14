@@ -66,7 +66,7 @@ func ResolveFromWorkingDir(cwd string) (Info, error) {
 }
 
 func RuntimeRoot(root string) string {
-	return filepath.Join(root, ".lazybase", "runtime")
+	return filepath.Join(root, "supabase", ".lazybase", "runtime")
 }
 
 func RuntimeSupabaseDir(root string) string {
